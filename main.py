@@ -342,94 +342,47 @@ possible_states = [
 ]
 
 
-def increment_ball_till_assister(present_state, cost):
-    if ball.x < blue_team[assister].x:
-        if ball.x + BALL_INCREMENT > blue_team[assister].x:
-            ball.x = blue_team[assister].x
-            ball.y = blue_team[assister].y
-            present_state = possible_states[2]
-        else:
-            ball.x = ball.x + BALL_INCREMENT
-            if ball.y != blue_team[assister].y:
-                ball.y = (
-                    (
-                        (kicker.y - blue_team[assister].y)
-                        / (kicker.x - blue_team[assister].x)
-                    )
-                    * (ball.x - kicker.x)
-                ) + kicker.y
-    elif ball.x > blue_team[assister].x:
-        if ball.x - BALL_INCREMENT < blue_team[assister].x:
-            ball.x = blue_team[assister].x
-            ball.y = blue_team[assister].y
-            present_state = possible_states[2]
-        else:
-            ball.x = ball.x - BALL_INCREMENT
-            if ball.y != blue_team[assister].y:
-                ball.y = (
-                    (
-                        (kicker.y - blue_team[assister].y)
-                        / (kicker.x - blue_team[assister].x)
-                    )
-                    * (ball.x - kicker.x)
-                ) + kicker.y
-    else:
-        if ball.y < blue_team[assister].y:
-            if ball.y + BALL_INCREMENT > blue_team[assister].y:
-                ball.y = blue_team[assister].y
-                present_state = possible_states[2]
-            else:
-                ball.y = ball.y + BALL_INCREMENT
-        else:
-            present_state = possible_states[2]
-    cost = ball.euclidean_distance(kicker)
-    return present_state, cost
-
-
-def increment_ball_till_goal(present_state, cost):
-    if ball.x < goal.x:
-        if ball.x + BALL_INCREMENT > goal.x:
-            ball.x = goal.x
-            ball.y = goal.y
-            present_state = possible_states[4]
-        else:
-            ball.x = ball.x + BALL_INCREMENT
-            if ball.y != goal.y:
-                ball.y = (
-                    (
-                        (blue_team[assister].y - goal.y)
-                        / (blue_team[assister].x - goal.x)
-                    )
-                    * (ball.x - goal.x)
-                ) + goal.y
-    elif ball.x > goal.x:
-        if ball.x - BALL_INCREMENT < goal.x:
-            ball.x = goal.x
-            ball.y = goal.y
-            present_state = possible_states[4]
-        else:
-            ball.x = ball.x - BALL_INCREMENT
-            if ball.y != goal.y:
-                ball.y = (
-                    (
-                        (blue_team[assister].y - goal.y)
-                        / (blue_team[assister].x - goal.x)
-                    )
-                    * (ball.x - goal.x)
-                ) + goal.y
-    else:
-        if ball.y < goal.y:
-            if ball.y + BALL_INCREMENT > goal.y:
-                ball.y = goal.y
-                present_state = possible_states[4]
-            else:
-                ball.y = ball.y + BALL_INCREMENT
-        else:
-            present_state = possible_states[4]
-    cost = blue_team[assister].euclidean_distance(kicker) + ball.euclidean_distance(
-        blue_team[assister]
+def get_y(x, P_1, P_2):
+    assert (
+        type(P_1) == Point
+        and type(P_2) == Point
+        and x not in [None, nan]
+        and P_1.x != P_2.x
     )
-    return present_state, cost
+
+    return (((P_1.y - P_2.y) / (P_1.x - P_2.x)) * (x - P_1.x)) + P_1.y
+
+
+def increment_ball(start, end, state, cost):
+    if ball.x < end.x:
+        if ball.x + BALL_INCREMENT > end.x:
+            ball.x = end.x
+            ball.y = end.y
+            state = possible_states[2]
+        else:
+            ball.x = ball.x + BALL_INCREMENT
+            if ball.y != end.y:
+                ball.y = get_y(ball.x, start, end)
+    elif ball.x > end.x:
+        if ball.x - BALL_INCREMENT < end.x:
+            ball.x = end.x
+            ball.y = end.y
+            state = possible_states[2]
+        else:
+            ball.x = ball.x - BALL_INCREMENT
+            if ball.y != end.y:
+                ball.y = get_y(ball.x, start, end)
+    else:
+        if ball.y < end.y:
+            if ball.y + BALL_INCREMENT > end.y:
+                ball.y = end.y
+                state = possible_states[2]
+            else:
+                ball.y = ball.y + BALL_INCREMENT
+        else:
+            state = possible_states[2]
+    cost = ball.euclidean_distance(start)
+    return state, cost
 
 
 def main():
@@ -449,11 +402,15 @@ def main():
         if present_state == possible_states[0]:
             present_state = possible_states[1]
         elif present_state == possible_states[1]:
-            present_state, cost = increment_ball_till_assister(present_state, cost)
+            present_state, cost = increment_ball(
+                kicker, blue_team[assister], present_state, cost
+            )
         elif present_state == possible_states[2]:
             present_state = possible_states[3]
         elif present_state == possible_states[3]:
-            present_state, cost = increment_ball_till_goal(present_state, cost)
+            present_state, cost = increment_ball(
+                blue_team[assister], goal, present_state, cost
+            )
 
 
 if __name__ == "__main__":
