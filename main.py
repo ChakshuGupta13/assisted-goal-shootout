@@ -1,68 +1,121 @@
 from math import ceil, floor, nan, sqrt
-import pygame
-import ctypes
+from ctypes import windll
 from random import uniform, seed
 from sys import exit
 from time import time_ns
-from pygame.constants import (
-    KEYDOWN,
-    K_ESCAPE,
-    QUIT,
-)
+from pprint import PrettyPrinter
+from pygame.constants import KEYDOWN, K_ESCAPE, QUIT
 
-# [NOTE] Handle exceptions more properly
+import pygame
+
+# [TODO] Handle exceptions more properly
 
 # Seeding the random number generater with the current time in nano-seconds
 seed(time_ns())
 
-# Extracting size (width, height) of the current window / screen
-user32 = ctypes.windll.user32
-WIN_W, WIN_H = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+# ----------------
+# GLOBAL VARIABLES
+# ----------------
 
-# Soccer pitch dimensions
-PITCH_W = 68
-PITCH_H = 105
+# Extracting size (width, height) of the current window / screen
+WIN_W, WIN_H = windll.user32.GetSystemMetrics(0), windll.user32.GetSystemMetrics(1)
+
+# Soccer field dimensions in meters
+FIELD_W = 68
+FIELD_H = 105
 PENALTY_AREA_W = 40.3
 PENALTY_AREA_H = 16.5
 GOAL_AREA_W = 18.32
 GOAL_AREA_H = 5.5
 CENTER_SPOT_R = 9.15
-BOUNDARY_W = 5
+# [TODO] After removing the dependencies of player circles on @LINE_W, change LINE_W = 0.12
+LINE_W = 5
 
-# Expanding to fit in the window
-EXPANSION_FACTOR = int(
+
+def from_L(area):
+    assert area not in [None, nan]
+
+    return area - LINE_W
+
+
+def L_till_R(area):
+    assert area not in [None, nan]
+
+    return LINE_W + area + LINE_W
+
+
+def till_R(area):
+    assert area not in [None, nan]
+
+    return area + LINE_W
+
+
+"""
+As the window size is expressed in pixels, and exact value mapping of 
+the above-mentioned soccer field dimensions (given in meters) to pixels would be inappropriate for display, hence, 
+we will map by multiplying them with @SCALE_UP factor to fit soccer field in the window.
+"""
+SCALE_UP = int(
     min(
-        ((WIN_W - (2 * BOUNDARY_W)) / PITCH_W),
-        ((WIN_H - (2 * BOUNDARY_W)) / (PITCH_H + (2 * GOAL_AREA_H))),
+        ((WIN_W - (2 * LINE_W)) / FIELD_W),
+        ((WIN_H - (4 * LINE_W)) / (FIELD_H + (2 * GOAL_AREA_H))),
     )
 )
 
-TEAM_SIZE = 3
 
-# Colors
-BORDER_COLOR = "#ffffff"
-BALL_COLOR = "#3c1414"
-GREEN = "#7eaf34"
+def x_range_of(area) -> list:
+    assert area not in [None, nan]
+
+    return [(WIN_W - (area * SCALE_UP)) / 2, (WIN_W + (area * SCALE_UP)) / 2]
+
+
+def y_range_of(area) -> list:
+    assert area not in [None, nan]
+
+    return [(WIN_H - (area * SCALE_UP)) / 2, (WIN_H + (area * SCALE_UP)) / 2]
+
+
+UPPER_HALF_X = FIELD_X = x_range_of(FIELD_W)
+FIELD_Y = y_range_of(FIELD_H)
+UPPER_HALF_Y = [FIELD_Y[0], WIN_H / 2]
+PENALTY_AREA_X = x_range_of(PENALTY_AREA_W)
+PENALTY_AREA_Y = [UPPER_HALF_Y[0], UPPER_HALF_Y[0] + (PENALTY_AREA_H * SCALE_UP)]
+GOAL_AREA_X = x_range_of(GOAL_AREA_W)
+GOAL_AREA_Y = [from_L(FIELD_Y[0]) - (GOAL_AREA_H * SCALE_UP), from_L(FIELD_Y[0])]
+TEAM_SIZE = 3
+# [TODO] @BALL_INCREMENT should not be same for each game.
+"""
+[Reason] 
+Currently, it is increasing one of the coordinates of the ball by 0.5,
+but, if the slope of connecting line either between two blue team players or 
+between a blue team player and goal line is close to 90 degrees or -270 degrees then 
+this value of increment will move the ball very fast per @FRAME_TIME.
+"""
+BALL_INCREMENT = 0.5
+# In micro-seconds
+FRAME_TIME = 50
+
+# Hex codes of all the colors used in the game
+WHITE = "#FFFFFF"
+BROWN = "#3C1414"
+GREEN = "#7EAF34"
 BLUE = "#191970"
 RED = "#C41E3A"
 
 
 class Point:
-    x = y = float("inf")
+    x = y = 0
 
-    def __init__(self, coordinates) -> None:
-        if type(coordinates) != list or len(coordinates) != 2:
-            exit()
+    def __init__(self, coordinates=[0, 0]) -> None:
+        assert (type(coordinates) == list) and (len(coordinates) == 2)
         for coordinate in coordinates:
-            if coordinate in [None, nan]:
-                exit()
+            assert coordinate not in [None, nan]
 
         self.x = coordinates[0]
         self.y = coordinates[1]
 
     def update(self, x, y) -> None:
-        if (x in [None, nan]) or (y in [None, nan]):
-            exit()
+        assert (x not in [None, nan]) and (y in [None, nan])
 
         self.x = x
         self.y = y
@@ -71,44 +124,33 @@ class Point:
         return [self.x, self.y]
 
     def euclidean_distance(self, point):
-        if type(point) != Point:
-            exit()
+        assert type(point) == Point
 
         return sqrt(pow((self.x - point.x), 2) + pow(self.y - point.y, 2))
 
     def print(self) -> None:
-        print([self.x, self.y])
+        PrettyPrinter.pprint(self.get_list())
 
 
 class Line:
     A = B = C = float("inf")
 
-    def __init__(self, point_1, point_2) -> None:
-        if (type(point_1) != Point) or (type(point_2) != Point):
-            exit()
+    def __init__(self, P_1, P_2) -> None:
+        assert (type(P_1) == Point) and (type(P_2) == Point)
 
-        self.A = point_1.y - point_2.y
-        self.B = point_1.x - point_2.x
-        self.C = (point_1.x * point_2.y) - (point_2.x * point_1.y)
+        self.A = P_1.y - P_2.y
+        self.B = P_1.x - P_2.x
+        self.C = (P_1.x * P_2.y) - (P_2.x * P_1.y)
 
-    def contain(self, point) -> bool:
-        if type(point) != Point:
-            exit()
+    def contain(self, P) -> bool:
+        assert type(P) == Point
 
-        return (
-            True if ((self.A * point.x) + (self.B * point.y) + self.C) == 0 else False
-        )
-
-    def get_y(self, x):
-        return -((self.C + (self.A * x)) / self.B)
-
-    def get_x(self, y):
-        return -((self.C + (self.B * y)) / self.A)
+        return True if ((self.A * P.x) + (self.B * P.y) + self.C) == 0 else False
 
 
 def find_min_direct_shoot_distance(player, opp_team, goal_range, goal_line_y):
     min_direct_shoot_distance = WIN_H
-    for x in range(goal_range[0], goal_range[1] + 1):
+    for x in range(ceil(goal_range[0]), floor(goal_range[1]) + 1):
         line = Line(player, Point([x, goal_line_y]))
         direct_shoot_possible = True
 
@@ -129,7 +171,7 @@ def find_min_direct_shoot_distance(player, opp_team, goal_range, goal_line_y):
 def find_goal(player, opp_team, goal_range, goal_line_y):
     min_direct_shoot_distance = WIN_H
     goal = Point([0, 0])
-    for x in range(goal_range[0], goal_range[1] + 1):
+    for x in range(ceil(goal_range[0]), floor(goal_range[1]) + 1):
         line = Line(player, Point([x, goal_line_y]))
         direct_shoot_possible = True
 
@@ -139,8 +181,12 @@ def find_goal(player, opp_team, goal_range, goal_line_y):
                 break
 
         if direct_shoot_possible:
-            if min_direct_shoot_distance > player.euclidean_distance(Point([x, goal_line_y])):
-                min_direct_shoot_distance = player.euclidean_distance(Point([x, goal_line_y]))
+            if min_direct_shoot_distance > player.euclidean_distance(
+                Point([x, goal_line_y])
+            ):
+                min_direct_shoot_distance = player.euclidean_distance(
+                    Point([x, goal_line_y])
+                )
                 goal = Point([x, goal_line_y])
 
     return goal
@@ -158,84 +204,40 @@ def find_dist_from_kicker(player, kicker, opp_team):
     return player.euclidean_distance(kicker) if direct_shoot_possible else WIN_H
 
 
-def random_point_in_red_play_area() -> Point:
+def random_upper_half_point() -> Point:
     return Point(
         [
-            uniform(
-                ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2),
-                ((WIN_W + (PITCH_W * EXPANSION_FACTOR)) / 2),
-            ),
-            uniform(((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2), (WIN_H / 2)),
+            uniform(UPPER_HALF_X[0], UPPER_HALF_X[1]),
+            uniform(UPPER_HALF_Y[0], UPPER_HALF_Y[1]),
         ]
     )
 
 
-def random_point_in_penalty_area() -> Point:
+def random_penalty_area_point() -> Point:
     return Point(
         [
-            uniform(
-                ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2)
-                + (((PITCH_W - PENALTY_AREA_W) * EXPANSION_FACTOR) / 2),
-                ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2)
-                + (((PITCH_W + PENALTY_AREA_W) * EXPANSION_FACTOR) / 2),
-            ),
-            uniform(
-                ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2),
-                ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2)
-                + (PENALTY_AREA_H * EXPANSION_FACTOR),
-            ),
+            uniform(PENALTY_AREA_X[0], PENALTY_AREA_X[1]),
+            uniform(PENALTY_AREA_Y[0], PENALTY_AREA_Y[1]),
         ]
     )
 
 
 def __init__team() -> list:
     team = []
-    for player in range(0, TEAM_SIZE - 1):
-        team.append(random_point_in_red_play_area())
-    team.append(random_point_in_penalty_area())
+    for _ in range(0, TEAM_SIZE - 1):
+        team.append(random_upper_half_point())
+    team.append(random_penalty_area_point())
     return team
 
 
-def draw_soccer_pitch_lines(area) -> None:
-    pygame.draw.rect(
-        SCREEN,
-        BORDER_COLOR,
-        area,
-        width=BOUNDARY_W,
-        border_top_left_radius=BOUNDARY_W,
-        border_top_right_radius=BOUNDARY_W,
-        border_bottom_left_radius=BOUNDARY_W,
-        border_bottom_right_radius=BOUNDARY_W,
-    )
-
-
-def draw_team(team, color) -> None:
-    for player in range(0, TEAM_SIZE):
-        pygame.draw.circle(
-            SCREEN, color, team[player].get_list(), (2 * BOUNDARY_W), width=BOUNDARY_W
-        )
-
-
-center_spot = Point([(WIN_W / 2), (WIN_H / 2)])
+kicker = center_spot = Point([(WIN_W / 2), (WIN_H / 2)])
 ball = Point([(WIN_W / 2), (WIN_H / 2)])
-kicker = Point([(WIN_W / 2), (WIN_H / 2)])
 blue_team = __init__team()
 red_team = __init__team()
 
-goal_range = [
-    ceil(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2)
-        + (((PITCH_W - GOAL_AREA_W) * EXPANSION_FACTOR) / 2)
-    ),
-    floor(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2)
-        + (((PITCH_W + GOAL_AREA_W) * EXPANSION_FACTOR) / 2)
-    ),
-]
-
 min_direct_shoot_distance = [WIN_H, WIN_H, WIN_H]
 dist_from_kicker = [WIN_H, WIN_H, WIN_H]
-shoot_assister = None
+assister = None
 cost = WIN_H
 # Determine whether Blue team players, except from the kicker, can take direct shoot out or not.
 # If yes, then determine the shortest distance between them and goal.
@@ -243,94 +245,93 @@ for i in range(0, 3):
     min_direct_shoot_distance[i] = min(
         min_direct_shoot_distance[i],
         find_min_direct_shoot_distance(
-            blue_team[i],
-            red_team,
-            goal_range,
-            ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2) - (2 * BOUNDARY_W),
+            blue_team[i], red_team, GOAL_AREA_X, from_L(FIELD_Y[0])
         ),
     )
     dist_from_kicker[i] = find_dist_from_kicker(blue_team[i], kicker, red_team)
     if cost > (min_direct_shoot_distance[i] + dist_from_kicker[i]):
-        shoot_assister = i
+        assister = i
         cost = min_direct_shoot_distance[i] + dist_from_kicker[i]
 
-goal = find_goal(blue_team[shoot_assister], red_team, goal_range, ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2) - (2 * BOUNDARY_W))
+goal = find_goal(blue_team[assister], red_team, GOAL_AREA_X, from_L(FIELD_Y[0]))
 
 
 # Initialising the game
 pygame.init()
+
+# GLOBAL game variables
 SCREEN = pygame.display.set_mode([0, 0])
 FONT = pygame.font.Font("freesansbold.ttf", 12)
 
+field = pygame.Rect(
+    from_L(FIELD_X[0]),
+    from_L(FIELD_Y[0]),
+    L_till_R(FIELD_W * SCALE_UP),
+    L_till_R(FIELD_H * SCALE_UP),
+)
+upper_half = pygame.Rect(
+    from_L(UPPER_HALF_X[0]),
+    from_L(UPPER_HALF_Y[0]),
+    L_till_R(FIELD_W * SCALE_UP),
+    L_till_R((FIELD_H / 2) * SCALE_UP),
+)
+penalty_area = pygame.Rect(
+    from_L(PENALTY_AREA_X[0]),
+    from_L(PENALTY_AREA_Y[0]),
+    L_till_R(PENALTY_AREA_W * SCALE_UP),
+    L_till_R(PENALTY_AREA_H * SCALE_UP),
+)
+goal_area = pygame.Rect(
+    from_L(GOAL_AREA_X[0]),
+    from_L(GOAL_AREA_Y[0]),
+    L_till_R(GOAL_AREA_W * SCALE_UP),
+    L_till_R(GOAL_AREA_H * SCALE_UP),
+)
 
-def draw_static():
-    cost_meter = FONT.render("Cost: " + str(cost), True, BORDER_COLOR, GREEN)
-    cost_meter_rect = cost_meter.get_rect()
-    cost_meter_rect.update(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2) - BOUNDARY_W,
-        ((WIN_H + (PITCH_H * EXPANSION_FACTOR)) / 2) + BOUNDARY_W,
-        cost_meter_rect.width,
-        cost_meter_rect.height,
+
+def draw_lines_of_rect(area) -> None:
+    pygame.draw.rect(
+        SCREEN, WHITE, area, LINE_W, LINE_W, LINE_W, LINE_W, LINE_W,
     )
 
+
+def draw_lines_of_circle(area, color, radius) -> None:
+    pygame.draw.circle(
+        SCREEN, color, area.get_list(), radius, width=LINE_W,
+    )
+
+
+def draw_team(team, team_color) -> None:
+    for player in range(0, TEAM_SIZE):
+        draw_lines_of_circle(team[player], team_color, (2 * LINE_W))
+
+
+def set_text_out(text):
+    text_out = FONT.render(str(text), True, WHITE, GREEN)
+    text_out_rect = text_out.get_rect()
+    text_out_rect.update(
+        from_L(FIELD_X[0]),
+        till_R(FIELD_Y[1]),
+        text_out_rect.width,
+        text_out_rect.height,
+    )
+    return text_out, text_out_rect
+
+
+def draw(cost):
     SCREEN.fill(GREEN)
-    SCREEN.blit(cost_meter, cost_meter_rect)
-
-    pitch = pygame.Rect(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2) - BOUNDARY_W,
-        ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2) - BOUNDARY_W,
-        (PITCH_W * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-        (PITCH_H * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-    )
-    red_play_area = pygame.Rect(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2) - BOUNDARY_W,
-        ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2) - BOUNDARY_W,
-        (PITCH_W * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-        ((PITCH_H / 2) * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-    )
-    penalty_area = pygame.Rect(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2)
-        - BOUNDARY_W
-        + (((PITCH_W - PENALTY_AREA_W) * EXPANSION_FACTOR) / 2),
-        ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2) - BOUNDARY_W,
-        (PENALTY_AREA_W * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-        (PENALTY_AREA_H * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-    )
-    goal_area = pygame.Rect(
-        ((WIN_W - (PITCH_W * EXPANSION_FACTOR)) / 2)
-        - BOUNDARY_W
-        + (((PITCH_W - GOAL_AREA_W) * EXPANSION_FACTOR) / 2),
-        ((WIN_H - (PITCH_H * EXPANSION_FACTOR)) / 2)
-        - (2 * BOUNDARY_W)
-        - (GOAL_AREA_H * EXPANSION_FACTOR),
-        (GOAL_AREA_W * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-        (GOAL_AREA_H * EXPANSION_FACTOR) + (2 * BOUNDARY_W),
-    )
-
-    draw_soccer_pitch_lines(pitch)
-    draw_soccer_pitch_lines(red_play_area)
-    draw_soccer_pitch_lines(penalty_area)
-    draw_soccer_pitch_lines(goal_area)
-    pygame.draw.circle(
-        SCREEN,
-        BORDER_COLOR,
-        center_spot.get_list(),
-        (CENTER_SPOT_R * EXPANSION_FACTOR),
-        width=BOUNDARY_W,
-    )
-    pygame.draw.circle(
-        SCREEN, BALL_COLOR, ball.get_list(), BOUNDARY_W, width=BOUNDARY_W
-    )
-    pygame.draw.circle(
-        SCREEN, BLUE, kicker.get_list(), 2 * BOUNDARY_W, width=BOUNDARY_W
-    )
-
+    draw_lines_of_rect(field)
+    draw_lines_of_rect(upper_half)
+    draw_lines_of_rect(penalty_area)
+    draw_lines_of_rect(goal_area)
+    draw_lines_of_circle(center_spot, WHITE, (CENTER_SPOT_R * SCALE_UP))
+    draw_lines_of_circle(ball, BROWN, LINE_W)
+    draw_lines_of_circle(kicker, BLUE, (2 * LINE_W))
     draw_team(blue_team, BLUE)
     draw_team(red_team, RED)
+    text_out, text_out_rect = set_text_out(cost)
+    SCREEN.blit(text_out, text_out_rect)
 
-
-draw_static()
-pygame.display.flip()
 
 possible_states = [
     "BALL_WITH_KICKER",
@@ -339,78 +340,121 @@ possible_states = [
     "BALL_GOING_TO_GOAL_AREA",
     "BALL_IN_GOAL_AREA",
 ]
-cost = 0
-present_state = possible_states[0]
-while True:
-    for event in pygame.event.get():
-        if (event.type == KEYDOWN and event.key == K_ESCAPE) or (event.type == QUIT):
-            exit()
-    
-    print(ball.get_list())
 
-    pygame.display.flip()
-    pygame.time.wait(50)
 
-    if present_state == possible_states[0]:
-        present_state = possible_states[1]
-    elif present_state == possible_states[1]:
-        if ball.x < blue_team[shoot_assister].x:
-            if ball.x + 0.5 > blue_team[shoot_assister].x:
-                ball.x = blue_team[shoot_assister].x
-                ball.y = blue_team[shoot_assister].y
-                present_state = possible_states[2]
-            else:
-                ball.x = ball.x + 0.5
-                if ball.y != blue_team[shoot_assister].y:
-                    ball.y = (((kicker.y - blue_team[shoot_assister].y) / (kicker.x - blue_team[shoot_assister].x)) * (ball.x - kicker.x)) + kicker.y
-        elif ball.x > blue_team[shoot_assister].x:
-            if ball.x - 0.5 < blue_team[shoot_assister].x:
-                ball.x = blue_team[shoot_assister].x
-                ball.y = blue_team[shoot_assister].y
-                present_state = possible_states[2]
-            else:
-                ball.x = ball.x - 0.5
-                if ball.y != blue_team[shoot_assister].y:
-                    ball.y = (((kicker.y - blue_team[shoot_assister].y) / (kicker.x - blue_team[shoot_assister].x)) * (ball.x - kicker.x)) + kicker.y
+def increment_ball_till_assister(present_state, cost):
+    if ball.x < blue_team[assister].x:
+        if ball.x + BALL_INCREMENT > blue_team[assister].x:
+            ball.x = blue_team[assister].x
+            ball.y = blue_team[assister].y
+            present_state = possible_states[2]
         else:
-            if ball.y < blue_team[shoot_assister].y:
-                if ball.y + 0.5 > blue_team[shoot_assister].y:
-                    ball.y = blue_team[shoot_assister].y
-                    present_state = possible_states[2]
-                else:
-                    ball.y = ball.y + 0.5
-            else:
+            ball.x = ball.x + BALL_INCREMENT
+            if ball.y != blue_team[assister].y:
+                ball.y = (
+                    (
+                        (kicker.y - blue_team[assister].y)
+                        / (kicker.x - blue_team[assister].x)
+                    )
+                    * (ball.x - kicker.x)
+                ) + kicker.y
+    elif ball.x > blue_team[assister].x:
+        if ball.x - BALL_INCREMENT < blue_team[assister].x:
+            ball.x = blue_team[assister].x
+            ball.y = blue_team[assister].y
+            present_state = possible_states[2]
+        else:
+            ball.x = ball.x - BALL_INCREMENT
+            if ball.y != blue_team[assister].y:
+                ball.y = (
+                    (
+                        (kicker.y - blue_team[assister].y)
+                        / (kicker.x - blue_team[assister].x)
+                    )
+                    * (ball.x - kicker.x)
+                ) + kicker.y
+    else:
+        if ball.y < blue_team[assister].y:
+            if ball.y + BALL_INCREMENT > blue_team[assister].y:
+                ball.y = blue_team[assister].y
                 present_state = possible_states[2]
-        cost = ball.euclidean_distance(kicker)
-    elif present_state == possible_states[2]:
-        present_state = possible_states[3]
-    elif present_state == possible_states[3]:
-        if ball.x < goal.x:
-            if ball.x + 0.5 > goal.x:
-                ball.x = goal.x
+            else:
+                ball.y = ball.y + BALL_INCREMENT
+        else:
+            present_state = possible_states[2]
+    cost = ball.euclidean_distance(kicker)
+    return present_state, cost
+
+
+def increment_ball_till_goal(present_state, cost):
+    if ball.x < goal.x:
+        if ball.x + BALL_INCREMENT > goal.x:
+            ball.x = goal.x
+            ball.y = goal.y
+            present_state = possible_states[4]
+        else:
+            ball.x = ball.x + BALL_INCREMENT
+            if ball.y != goal.y:
+                ball.y = (
+                    (
+                        (blue_team[assister].y - goal.y)
+                        / (blue_team[assister].x - goal.x)
+                    )
+                    * (ball.x - goal.x)
+                ) + goal.y
+    elif ball.x > goal.x:
+        if ball.x - BALL_INCREMENT < goal.x:
+            ball.x = goal.x
+            ball.y = goal.y
+            present_state = possible_states[4]
+        else:
+            ball.x = ball.x - BALL_INCREMENT
+            if ball.y != goal.y:
+                ball.y = (
+                    (
+                        (blue_team[assister].y - goal.y)
+                        / (blue_team[assister].x - goal.x)
+                    )
+                    * (ball.x - goal.x)
+                ) + goal.y
+    else:
+        if ball.y < goal.y:
+            if ball.y + BALL_INCREMENT > goal.y:
                 ball.y = goal.y
                 present_state = possible_states[4]
             else:
-                ball.x = ball.x + 0.5
-                if ball.y != goal.y:
-                    ball.y = (((blue_team[shoot_assister].y - goal.y) / (blue_team[shoot_assister].x - goal.x)) * (ball.x - goal.x)) + goal.y
-        elif ball.x > goal.x:
-            if ball.x - 0.5 < goal.x:
-                ball.x = goal.x
-                ball.y = goal.y
-                present_state = possible_states[4]
-            else:
-                ball.x = ball.x - 0.5
-                if ball.y != goal.y:
-                    ball.y = (((blue_team[shoot_assister].y - goal.y) / (blue_team[shoot_assister].x - goal.x)) * (ball.x - goal.x)) + goal.y
+                ball.y = ball.y + BALL_INCREMENT
         else:
-            if ball.y < goal.y:
-                if ball.y + 0.5 > goal.y:
-                    ball.y = goal.y
-                    present_state = possible_states[4]
-                else:
-                    ball.y = ball.y + 0.5
-            else:
-                present_state = possible_states[4]
-        cost = blue_team[shoot_assister].euclidean_distance(kicker) + ball.euclidean_distance(blue_team[shoot_assister])
-    draw_static()
+            present_state = possible_states[4]
+    cost = blue_team[assister].euclidean_distance(kicker) + ball.euclidean_distance(
+        blue_team[assister]
+    )
+    return present_state, cost
+
+
+def main():
+    present_state = possible_states[0]
+    cost = 0
+    while True:
+        for event in pygame.event.get():
+            if (event.type == KEYDOWN and event.key == K_ESCAPE) or (
+                event.type == QUIT
+            ):
+                exit()
+
+        draw(cost)
+        pygame.display.flip()
+        pygame.time.wait(FRAME_TIME)
+
+        if present_state == possible_states[0]:
+            present_state = possible_states[1]
+        elif present_state == possible_states[1]:
+            present_state, cost = increment_ball_till_assister(present_state, cost)
+        elif present_state == possible_states[2]:
+            present_state = possible_states[3]
+        elif present_state == possible_states[3]:
+            present_state, cost = increment_ball_till_goal(present_state, cost)
+
+
+if __name__ == "__main__":
+    main()
