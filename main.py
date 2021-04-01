@@ -230,13 +230,15 @@ def __init__team() -> list:
     return team
 
 
-kicker = center_spot = Point([(WIN_W / 2), (WIN_H / 2)])
-ball = Point([(WIN_W / 2), (WIN_H / 2)])
+kicker = center_spot = Point([WIN_W / 2, WIN_H / 2])
+ball = Point([WIN_W / 2, WIN_H / 2])
 blue_team = __init__team()
+blue_team_r = [(2 * LINE_W)] * TEAM_SIZE
 red_team = __init__team()
+red_team_r = [(2 * LINE_W)] * TEAM_SIZE
 
-min_direct_shoot_distance = [WIN_H, WIN_H, WIN_H]
-dist_from_kicker = [WIN_H, WIN_H, WIN_H]
+min_direct_shoot_distance = [WIN_H] * TEAM_SIZE
+dist_from_kicker = [WIN_H] * TEAM_SIZE
 assister = None
 cost = WIN_H
 # Determine whether Blue team players, except from the kicker, can take direct shoot out or not.
@@ -301,9 +303,9 @@ def draw_lines_of_circle(area, color, radius) -> None:
     )
 
 
-def draw_team(team, team_color) -> None:
+def draw_team(team, team_color, radius) -> None:
     for player in range(0, TEAM_SIZE):
-        draw_lines_of_circle(team[player], team_color, (2 * LINE_W))
+        draw_lines_of_circle(team[player], team_color, radius[player])
 
 
 def set_text_out(text):
@@ -327,8 +329,8 @@ def draw(cost):
     draw_lines_of_circle(center_spot, WHITE, (CENTER_SPOT_R * SCALE_UP))
     draw_lines_of_circle(ball, BROWN, LINE_W)
     draw_lines_of_circle(kicker, BLUE, (2 * LINE_W))
-    draw_team(blue_team, BLUE)
-    draw_team(red_team, RED)
+    draw_team(blue_team, BLUE, blue_team_r)
+    draw_team(red_team, RED, red_team_r)
     text_out, text_out_rect = set_text_out(cost)
     SCREEN.blit(text_out, text_out_rect)
 
