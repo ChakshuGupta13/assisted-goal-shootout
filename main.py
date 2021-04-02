@@ -450,16 +450,28 @@ def draw(cost):
     draw_team(red_team, RED, red_team_r)
     text_out, text_out_rect = set_text_out(cost)
     SCREEN.blit(text_out, text_out_rect)
-    text_out, text_out_rect = print_text(
-        pformat(all_paths_in_notation[0]) + " : " + str(cost_of(all_paths[0])),
-        text_out_rect.height,
-    )
-    SCREEN.blit(text_out, text_out_rect)
-    text_out, text_out_rect = print_text(
-        pformat(all_paths_in_notation[1]) + " : " + str(cost_of(all_paths[1])),
-        2 * text_out_rect.height,
-    )
-    SCREEN.blit(text_out, text_out_rect)
+    if len(all_paths) == 0:
+        text_out, text_out_rect = print_text(
+            "No solution possible.", text_out_rect.height,
+        )
+        SCREEN.blit(text_out, text_out_rect)
+    else:
+        text_out, text_out_rect = print_text(
+            pformat(all_paths_in_notation[0]) + " : " + str(cost_of(all_paths[0])),
+            text_out_rect.height,
+        )
+        SCREEN.blit(text_out, text_out_rect)
+        if len(all_paths) >= 2:
+            text_out, text_out_rect = print_text(
+                pformat(all_paths_in_notation[1]) + " : " + str(cost_of(all_paths[1])),
+                2 * text_out_rect.height,
+            )
+            SCREEN.blit(text_out, text_out_rect)
+        else:
+            text_out, text_out_rect = print_text(
+                pformat([]) + " : " + str(float("inf")), 2 * text_out_rect.height,
+            )
+            SCREEN.blit(text_out, text_out_rect)
     text_out, text_out_rect = print_text(
         "Press ESC to Quit.", 3 * text_out_rect.height,
     )
