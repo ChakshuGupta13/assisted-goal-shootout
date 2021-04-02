@@ -1,2 +1,4 @@
 # assisted-goal-shootout
-The task is to model an agent to perform assisted goal shootout in the game of soccer. This is a simple implementation of policies, no learning is expected by the agent.
+
+Run the main.py file with Python 3+ for the game. 
+To quit, press ESC.
